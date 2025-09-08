@@ -1,51 +1,75 @@
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
-import crypto from "crypto";
 
 const router = express.Router();
 
+// ✅ Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const algorithm = "aes-256-ctr";
-const secretKey = crypto.createHash("sha256")
-  .update(process.env.ENCRYPTION_SECRET)
-  .digest("base64")
-  .substring(0, 32);
+// ================================
+// GET all LinkedIn accounts
+// ================================
+router.get("/", async (req, res) => {
+  const { data, error } = await supabase
+    .from("linkedin_accounts")
+    .select("*");
 
-const encrypt = (text) => {
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(algorithm, secretKey, iv);
-  const encrypted = Buffer.concat([cipher.update(text), cipher.final()]);
-  return `${iv.toString("hex")}:${encrypted.toString("hex")}`;
-};
-
-// Save LinkedIn account
-router.post("/", async (req, res) => {
-  try {
-    const { email, password, proxy } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password required" });
-    }
-
-    const { data, error } = await supabase
-      .from("linkedin_accounts")
-      .insert([
-        {
-          email: encrypt(email),
-          password: encrypt(password),
-          proxy: proxy ? encrypt(proxy) : null,
-        },
-      ])
-      .select();
-
-    if (error) throw error;
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  if (error) {
+    return res.status(500).json({ error: error.message });
   }
+
+  res.json(data);
+});
+
+// ================================
+// POST - Add new LinkedIn account
+// ================================
+router.post("/", async (req, res) => {
+  const { userId, accountName, cookie, proxyId } = req.body;
+
+  if (!userId || !accountName || !cookie) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const { data, error } = await supabase
+    .from("linkedin_accounts")
+    .insert([
+      {
+        user_id: userId,
+        account_name: accountName,
+        cookie,
+        proxy_id: proxyId || null,
+        status: "active"
+      }
+    ])
+    .select();
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  res.json(data[0]);
+});
+
+// ================================
+// DELETE - Remove LinkedIn account
+// ================================
+router.delete("/:id", async (req, res) => {
+  const { id } = req.params;
+
+  const { error } = await supabase
+    .from("linkedin_accounts")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  res.json({ success: true, id });
 });
 
 export default router;
